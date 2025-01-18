@@ -176,4 +176,89 @@ public class PackFile : IDisposable
         ((IDisposable)_packStream).Dispose();
         GC.SuppressFinalize(this);
     }
+
+    public static PackFile Create(string outputFile, ILoggerFactory loggerFactory = null)
+    {
+        var fs = File.Create(outputFile);
+        return new PackFile(fs, loggerFactory);
+    }
+
+    public void AddFile(string gamePath, string inputFile)
+    {
+        ArgumentNullException.ThrowIfNull(gamePath);
+        ArgumentNullException.ThrowIfNull(inputFile);
+
+        var fileInfo = new FileInfo(inputFile);
+        if (!fileInfo.Exists)
+            throw new FileNotFoundException("Input file not found", inputFile);
+
+        var entry = new PackFileEntry
+        {
+            FileOffset = _packStream.Position,
+            FileSize = fileInfo.Length,
+            PathHash = HashPath(gamePath),
+            Flags = 0,
+            FileNameLength = (byte)Math.Min(gamePath.Length, 0xF0)
+        };
+
+        unsafe
+        {
+            Encoding.ASCII.GetBytes(gamePath).AsSpan(0, entry.FileNameLength)
+                .CopyTo(MemoryMarshal.CreateSpan(ref entry.FileNameBuffer[0], entry.FileNameLength));
+        }
+
+        byte[] fileData = File.ReadAllBytes(inputFile);
+        _packStream.Write(fileData);
+
+        _fileTable[gamePath] = entry;
+        _fileTableKeys[entry.PathHash] = entry;
+
+        _logger?.LogInformation("Added file '{path}' (0x{size:X} bytes)", gamePath, fileData.Length);
+    }
+
+    public void AddDirectory(string gamePath)
+    {
+        ArgumentNullException.ThrowIfNull(gamePath);
+
+        var entry = new PackFileEntry
+        {
+            FileOffset = 0,
+            FileSize = 0,
+            PathHash = HashPath(gamePath),
+            Flags = FileFlags.IsDirectory,
+            FileNameLength = (byte)Math.Min(gamePath.Length, 0xF0)
+        };
+
+        unsafe
+        {
+            Encoding.ASCII.GetBytes(gamePath).AsSpan(0, entry.FileNameLength)
+                .CopyTo(MemoryMarshal.CreateSpan(ref entry.FileNameBuffer[0], entry.FileNameLength));
+        }
+
+        _fileTable[gamePath] = entry;
+        _fileTableKeys[entry.PathHash] = entry;
+
+        _logger?.LogInformation("Added directory '{path}'", gamePath);
+    }
+
+    public void Finalize()
+    {
+        // Write file table
+        byte[] fileTableBytes = new byte[FILE_TABLE_SIZE];
+        int offset = 0;
+
+        foreach (var entry in _fileTable.Values.OrderBy(e => e.PathHash))
+        {
+            var entrySpan = MemoryMarshal.Cast<PackFileEntry, byte>(new[] { entry });
+            entrySpan.CopyTo(fileTableBytes.AsSpan(offset));
+            offset += 0x100;
+
+            if (offset >= FILE_TABLE_SIZE)
+                throw new InvalidOperationException("Too many files in pack");
+        }
+
+        Xor(fileTableBytes, KEY);
+        _packStream.Write(fileTableBytes);
+        _packStream.Flush();
+    }
 }

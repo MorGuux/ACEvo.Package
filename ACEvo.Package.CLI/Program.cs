@@ -33,10 +33,11 @@ public class Program
         Console.WriteLine("-----------------------------------------");
         Console.WriteLine("");
 
-        var p = Parser.Default.ParseArguments<UnpackFileVerbs, UnpackVerbs, ListFilesVerbs>(args)
+        var p = Parser.Default.ParseArguments<UnpackFileVerbs, UnpackVerbs, ListFilesVerbs, PackVerbs>(args)
             .WithParsed<UnpackFileVerbs>(UnpackFile)
             .WithParsed<UnpackVerbs>(Unpack)
-            .WithParsed<ListFilesVerbs>(ListFiles);
+            .WithParsed<ListFilesVerbs>(ListFiles)
+            .WithParsed<PackVerbs>(Pack);
     }
 
     static void UnpackFile(UnpackFileVerbs verbs)
@@ -117,6 +118,52 @@ public class Program
             _logger.LogError(ex, "Failed to read pack.");
         }
     }
+
+    static void Pack(PackVerbs verbs)
+    {
+        if (!Directory.Exists(verbs.InputDirectory))
+        {
+            _logger.LogError("Directory '{path}' does not exist", verbs.InputDirectory);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(verbs.OutputFile))
+        {
+            string inputDirName = new DirectoryInfo(verbs.InputDirectory).Name;
+            verbs.OutputFile = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(verbs.InputDirectory)), $"{inputDirName}.kspkg");
+        }
+
+        try
+        {
+            using var pack = PackFile.Create(verbs.OutputFile, _loggerFactory);
+            _logger.LogInformation("Starting pack process from '{dir}'", verbs.InputDirectory);
+
+            // Get all files and directories
+            var allFiles = Directory.GetFiles(verbs.InputDirectory, "*", SearchOption.AllDirectories);
+            var allDirs = Directory.GetDirectories(verbs.InputDirectory, "*", SearchOption.AllDirectories);
+
+            // Add directories first
+            foreach (var dir in allDirs)
+            {
+                string relativePath = Path.GetRelativePath(verbs.InputDirectory, dir).Replace('\\', '/');
+                pack.AddDirectory(relativePath);
+            }
+
+            // Then add files
+            foreach (var file in allFiles)
+            {
+                string relativePath = Path.GetRelativePath(verbs.InputDirectory, file).Replace('\\', '/');
+                pack.AddFile(relativePath, file);
+            }
+
+            pack.Finalize();
+            _logger.LogInformation("Done. Pack file created at '{path}'", verbs.OutputFile);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create pack.");
+        }
+    }
 }
 
 [Verb("unpack", HelpText = "Unpacks a .kspkg file.")]
@@ -147,4 +194,14 @@ public class ListFilesVerbs
 {
     [Option('i', "input", Required = true, HelpText = "Input .kspkg pack")]
     public string InputFile { get; set; }
+}
+
+[Verb("pack", HelpText = "Creates a new .kspkg file from a directory.")]
+public class PackVerbs
+{
+    [Option('i', "input", Required = true, HelpText = "Input directory to pack")]
+    public string InputDirectory { get; set; }
+
+    [Option('o', "output", HelpText = "Output .kspkg file. Optional, defaults to directory name + .kspkg")]
+    public string OutputFile { get; set; }
 }
