@@ -10,13 +10,12 @@ using NLog;
 using NLog.Extensions.Logging;
 
 using System.Diagnostics;
+using System.Reflection;
 
 namespace ACEvo.Package.CLI;
 
 public class Program
 {
-    public const string Version = "1.0.0";
-
     private static ILoggerFactory _loggerFactory;
     private static Microsoft.Extensions.Logging.ILogger _logger;
 
@@ -25,19 +24,26 @@ public class Program
         _loggerFactory = LoggerFactory.Create(builder => builder.AddNLog());
         _logger = _loggerFactory.CreateLogger<Program>();
 
-        Console.WriteLine("-----------------------------------------");
-        Console.WriteLine($"- ACEvo.Package.CLI {Version} by Nenkai");
-        Console.WriteLine("-----------------------------------------");
+        Console.WriteLine("------------------------------------------------------------");
+        Console.WriteLine($"- ACEvo.Package.CLI {Assembly.GetEntryAssembly().GetName().Version}, originally written by Nenkai");
+        Console.WriteLine("------------------------------------------------------------");
         Console.WriteLine("- https://github.com/Nenkai");
         Console.WriteLine("- https://twitter.com/Nenkaai");
-        Console.WriteLine("-----------------------------------------");
+        Console.WriteLine("------------------------------------------------------------");
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine("---- Modified by MorGuux for Vortex Mod Manager support ----");
+        Console.ResetColor();
+        Console.WriteLine("------------------------------------------------------------");
         Console.WriteLine("");
 
-        var p = Parser.Default.ParseArguments<UnpackFileVerbs, UnpackVerbs, ListFilesVerbs, PackVerbs>(args)
+        var p = Parser.Default
+            .ParseArguments<UnpackFileVerbs, UnpackVerbs, ListFilesVerbs, FileExistsVerbs, PackVerbs, PatchVerbs>(args)
             .WithParsed<UnpackFileVerbs>(UnpackFile)
             .WithParsed<UnpackVerbs>(Unpack)
             .WithParsed<ListFilesVerbs>(ListFiles)
-            .WithParsed<PackVerbs>(Pack);
+            .WithParsed<FileExistsVerbs>(FileExists)
+            .WithParsed<PackVerbs>(Pack)
+            .WithParsed<PatchVerbs>(Patch);
     }
 
     static void UnpackFile(UnpackFileVerbs verbs)
@@ -68,7 +74,7 @@ public class Program
         }
     }
 
-    static void Unpack(UnpackVerbs verbs)
+    private static void Unpack(UnpackVerbs verbs)
     {
         if (!File.Exists(verbs.InputFile))
         {
@@ -96,7 +102,7 @@ public class Program
         }
     }
 
-    static void ListFiles(ListFilesVerbs verbs)
+    private static void ListFiles(ListFilesVerbs verbs)
     {
         if (!File.Exists(verbs.InputFile))
         {
@@ -119,7 +125,28 @@ public class Program
         }
     }
 
-    static void Pack(PackVerbs verbs)
+    private static void FileExists(FileExistsVerbs verbs)
+    {
+        if (!File.Exists(verbs.InputFile))
+        {
+            _logger.LogError("File '{path}' does not exist", verbs.InputFile);
+            return;
+        }
+
+        try
+        {
+            using var pack = PackFile.Open(verbs.InputFile, _loggerFactory);
+
+            var fileExists = pack.FileExists(verbs.FileToCheck);
+            _logger.LogInformation("File \"{path}\" found: {exists}", verbs.FileToCheck, fileExists);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to read pack.");
+        }
+    }
+
+    private static void Pack(PackVerbs verbs)
     {
         if (!Directory.Exists(verbs.InputDirectory))
         {
@@ -164,6 +191,57 @@ public class Program
             _logger.LogError(ex, "Failed to create pack.");
         }
     }
+
+    private static void Patch(PatchVerbs verbs)
+    {
+        if (!Directory.Exists(verbs.InputDirectory))
+        {
+            _logger.LogError("Directory '{path}' does not exist", verbs.InputDirectory);
+            return;
+        }
+
+        if (!File.Exists(verbs.OutputFile))
+        {
+            _logger.LogError("File '{path}' does not exist", verbs.OutputFile);
+            return;
+        }
+
+        try
+        {
+            using (var pack = PackFile.Open(verbs.OutputFile, _loggerFactory))
+            {
+                _logger.LogInformation("Starting patch process from '{dir}'", verbs.InputDirectory);
+                _logger.LogInformation("Found {count} files in pack.", pack.FileCount);
+
+                // Get all files and directories
+                var allFiles = Directory.GetFiles(verbs.InputDirectory, "*", SearchOption.AllDirectories);
+                var allDirs = Directory.GetDirectories(verbs.InputDirectory, "*", SearchOption.AllDirectories);
+
+                // Add directories first
+                foreach (var dir in allDirs)
+                {
+                    string relativePath = Path.GetRelativePath(verbs.InputDirectory, dir);
+                    _logger.LogInformation("Adding directory '{path}'", relativePath);
+                    pack.AddDirectory(relativePath);
+                }
+
+                // Then add files
+                foreach (var file in allFiles)
+                {
+                    string relativePath = Path.GetRelativePath(verbs.InputDirectory, file);
+                    _logger.LogInformation("Adding file '{path}'", relativePath);
+                    pack.AddFile(relativePath, file);
+                }
+
+                pack.Finalize();
+                _logger.LogInformation("Done. Pack file modified at '{path}'", verbs.OutputFile);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create pack.");
+        }
+    }
 }
 
 [Verb("unpack", HelpText = "Unpacks a .kspkg file.")]
@@ -196,6 +274,16 @@ public class ListFilesVerbs
     public string InputFile { get; set; }
 }
 
+[Verb("file-exists", HelpText = "Does a file exists in a .kspkg pack. Returns true if the file exists, false if the file does not exist.")]
+public class FileExistsVerbs
+{
+    [Option('i', "input", Required = true, HelpText = "Input .kspkg pack")]
+    public string InputFile { get; set; }
+
+    [Option('f', "file", Required = true, HelpText = "File to check.")]
+    public string FileToCheck { get; set; }
+}
+
 [Verb("pack", HelpText = "Creates a new .kspkg file from a directory.")]
 public class PackVerbs
 {
@@ -203,5 +291,15 @@ public class PackVerbs
     public string InputDirectory { get; set; }
 
     [Option('o', "output", HelpText = "Output .kspkg file. Optional, defaults to directory name + .kspkg")]
+    public string OutputFile { get; set; }
+}
+
+[Verb("patch", HelpText = "Modifies an existing .kspkg file.")]
+public class PatchVerbs
+{
+    [Option('i', "input", Required = true, HelpText = "Input directory to patch")]
+    public string InputDirectory { get; set; }
+
+    [Option('o', "output", Required = true, HelpText = "Output .kspkg file to modify")]
     public string OutputFile { get; set; }
 }

@@ -2,7 +2,7 @@
   "profiles": {
     "ACEvo.Package.CLI": {
       "commandName": "Project",
-      "commandLineArgs": "unpack-file -i \"D:\\Xeno\\Assetto Corsa EVO\\content.kspkg\" -f \"cfg/crazy1.lut\""
+      "commandLineArgs": "patch -i \"C:\\Users\\morga\\Downloads\\ace\" -o \"F:\\SteamLibrary\\steamapps\\common\\Assetto Corsa EVO\\content.kspkg\""
     }
   }
 }

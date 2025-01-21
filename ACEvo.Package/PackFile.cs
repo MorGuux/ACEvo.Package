@@ -31,6 +31,8 @@ public class PackFile : IDisposable
 
     private FileStream _packStream;
 
+    public int FileCount => _fileTable.Count;
+
     public PackFile(FileStream stream, ILoggerFactory loggerFactory = null)
     {
         ArgumentNullException.ThrowIfNull(stream, nameof(stream));
@@ -44,7 +46,7 @@ public class PackFile : IDisposable
 
     public static PackFile Open(string file, ILoggerFactory loggerFactory = null)
     {
-        var fs = File.OpenRead(file);
+        var fs = File.Open(file, FileMode.Open, FileAccess.ReadWrite);
         fs.Position = fs.Length - FILE_TABLE_SIZE;
 
         byte[] fileTableBytes = new byte[FILE_TABLE_SIZE];
@@ -147,6 +149,12 @@ public class PackFile : IDisposable
         }
     }
 
+    public bool FileExists(string fileToCheck, bool log = false)
+    {
+        var hash = HashPath(fileToCheck);
+        return _fileTableKeys.TryGetValue(hash, out _);
+    }
+
     private static ulong HashPath(string path)
     {
         byte[] bytes = Encoding.Unicode.GetBytes(path.ToLower().Replace('/', '\\'));
@@ -192,6 +200,14 @@ public class PackFile : IDisposable
         if (!fileInfo.Exists)
             throw new FileNotFoundException("Input file not found", inputFile);
 
+        //Check if file already exists in the pack, if so, overwrite it
+        if (_fileTable.ContainsKey(gamePath))
+        {
+            _logger?.LogInformation("File '{path}' already exists, overwriting", gamePath);
+            _fileTable.Remove(gamePath);
+            _fileTableKeys.Remove(HashPath(gamePath));
+        }
+
         var entry = new PackFileEntry
         {
             FileOffset = _packStream.Position,
@@ -219,6 +235,13 @@ public class PackFile : IDisposable
     public void AddDirectory(string gamePath)
     {
         ArgumentNullException.ThrowIfNull(gamePath);
+
+        //Check if directory already exists in the pack
+        if (_fileTable.ContainsKey(gamePath))
+        {
+            _logger?.LogInformation("Directory '{path}' already exists", gamePath);
+            return;
+        }
 
         var entry = new PackFileEntry
         {
