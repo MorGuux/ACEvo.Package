@@ -242,7 +242,7 @@ public class Program
                 {
                     string relativePath = Path.GetRelativePath(verbs.InputDirectory, file);
                     _logger.LogInformation("Adding file '{path}'", relativePath);
-                    pack.AddFile(relativePath, file);
+                    pack.AddFile(relativePath, file, verbs.BackupPath);
                 }
 
                 pack.Finalize();
@@ -318,4 +318,7 @@ public class PatchVerbs
 
     [Option('o', "output", Required = true, HelpText = "Output .kspkg file to modify")]
     public string OutputFile { get; set; }
+
+    [Option('b', "backup", HelpText = "Optional. Backup directory.")]
+    public string BackupPath { get; set; }
 }

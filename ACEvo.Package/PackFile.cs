@@ -191,7 +191,7 @@ public class PackFile : IDisposable
         return new PackFile(fs, loggerFactory);
     }
 
-    public void AddFile(string gamePath, string inputFile)
+    public void AddFile(string gamePath, string inputFile, string backupPath = "")
     {
         ArgumentNullException.ThrowIfNull(gamePath);
         ArgumentNullException.ThrowIfNull(inputFile);
@@ -203,7 +203,18 @@ public class PackFile : IDisposable
         //Check if file already exists in the pack, if so, overwrite it
         if (_fileTable.ContainsKey(gamePath))
         {
-            _logger?.LogInformation("File '{path}' already exists, overwriting", gamePath);
+            if (!string.IsNullOrEmpty(backupPath))
+            {
+                // Backup the file
+                _logger?.LogInformation("File '{path}' already exists, backing up before overwrite", gamePath);
+                ExtractFile(gamePath, backupPath);
+                _logger?.LogInformation("File '{path}' backed up to '{backupPath}'", gamePath, backupPath);
+            }
+            else
+            {
+                _logger?.LogInformation("File '{path}' already exists, overwriting", gamePath);
+            }
+
             _fileTable.Remove(gamePath);
             _fileTableKeys.Remove(HashPath(gamePath));
         }
