@@ -51,6 +51,7 @@ public class Program
         if (!File.Exists(verbs.InputFile))
         {
             _logger.LogError("File '{path}' does not exist", verbs.InputFile);
+            Environment.Exit(2);
             return;
         }
 
@@ -71,6 +72,7 @@ public class Program
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to unpack.");
+            Environment.Exit(2);
         }
     }
 
@@ -79,6 +81,7 @@ public class Program
         if (!File.Exists(verbs.InputFile))
         {
             _logger.LogError("File '{path}' does not exist", verbs.InputFile);
+            Environment.Exit(2);
             return;
         }
 
@@ -99,6 +102,7 @@ public class Program
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to unpack.");
+            Environment.Exit(13);
         }
     }
 
@@ -107,6 +111,7 @@ public class Program
         if (!File.Exists(verbs.InputFile))
         {
             _logger.LogError("File '{path}' does not exist", verbs.InputFile);
+            Environment.Exit(2);
             return;
         }
 
@@ -122,6 +127,7 @@ public class Program
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to read pack.");
+            Environment.Exit(13);
         }
     }
 
@@ -130,6 +136,7 @@ public class Program
         if (!File.Exists(verbs.InputFile))
         {
             _logger.LogError("File '{path}' does not exist", verbs.InputFile);
+            Environment.Exit(2);
             return;
         }
 
@@ -143,6 +150,7 @@ public class Program
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to read pack.");
+            Environment.Exit(13);
         }
     }
 
@@ -151,6 +159,7 @@ public class Program
         if (!Directory.Exists(verbs.InputDirectory))
         {
             _logger.LogError("Directory '{path}' does not exist", verbs.InputDirectory);
+            Environment.Exit(2);
             return;
         }
 
@@ -189,6 +198,7 @@ public class Program
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to create pack.");
+            Environment.Exit(13);
         }
     }
 
@@ -197,12 +207,14 @@ public class Program
         if (!Directory.Exists(verbs.InputDirectory))
         {
             _logger.LogError("Directory '{path}' does not exist", verbs.InputDirectory);
+            Environment.Exit(2);
             return;
         }
 
         if (!File.Exists(verbs.OutputFile))
         {
             _logger.LogError("File '{path}' does not exist", verbs.OutputFile);
+            Environment.Exit(2);
             return;
         }
 
@@ -235,11 +247,15 @@ public class Program
 
                 pack.Finalize();
                 _logger.LogInformation("Done. Pack file modified at '{path}'", verbs.OutputFile);
+
+                //Success
+                Environment.Exit(0);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to create pack.");
+            _logger.LogError(ex, "Failed to modify pack.");
+            Environment.Exit(13);
         }
     }
 }
