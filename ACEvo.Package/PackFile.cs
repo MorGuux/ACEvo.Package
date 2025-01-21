@@ -74,6 +74,23 @@ public class PackFile : IDisposable
         return packFile;
     }
 
+    public static void Dump(string file, string outputFileName)
+    {
+        const int bufferSize = 0x20000; // Define a chunk size (e.g., 4 KB)
+        byte[] buffer = new byte[bufferSize];
+
+        using (var inputStream = File.Open(file, FileMode.Open, FileAccess.Read))
+        using (var outputStream = File.Open(outputFileName, FileMode.Create, FileAccess.Write))
+        {
+            int bytesRead;
+            while ((bytesRead = inputStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                Xor(buffer, KEY);
+                outputStream.Write(buffer, 0, bytesRead);
+            }
+        }
+    }
+
     public void ExtractAll(string outputDir)
     {
         _fileCounter = 0;
@@ -208,12 +225,13 @@ public class PackFile : IDisposable
                 // Backup the file
                 _logger?.LogInformation("File '{path}' already exists, backing up before overwrite", gamePath);
                 ExtractFile(gamePath, backupPath);
-                _logger?.LogInformation("File '{path}' backed up to '{backupPath}'", gamePath, backupPath);
             }
             else
             {
                 _logger?.LogInformation("File '{path}' already exists, overwriting", gamePath);
             }
+
+            var oldFileAddress = _fileTable[gamePath].FileOffset;
 
             _fileTable.Remove(gamePath);
             _fileTableKeys.Remove(HashPath(gamePath));

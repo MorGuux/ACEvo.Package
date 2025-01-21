@@ -37,13 +37,14 @@ public class Program
         Console.WriteLine("");
 
         var p = Parser.Default
-            .ParseArguments<UnpackFileVerbs, UnpackVerbs, ListFilesVerbs, FileExistsVerbs, PackVerbs, PatchVerbs>(args)
+            .ParseArguments<UnpackFileVerbs, UnpackVerbs, ListFilesVerbs, FileExistsVerbs, PackVerbs, PatchVerbs, DumpVerbs>(args)
             .WithParsed<UnpackFileVerbs>(UnpackFile)
             .WithParsed<UnpackVerbs>(Unpack)
             .WithParsed<ListFilesVerbs>(ListFiles)
             .WithParsed<FileExistsVerbs>(FileExists)
             .WithParsed<PackVerbs>(Pack)
-            .WithParsed<PatchVerbs>(Patch);
+            .WithParsed<PatchVerbs>(Patch)
+            .WithParsed<DumpVerbs>(Dump);
     }
 
     static void UnpackFile(UnpackFileVerbs verbs)
@@ -97,6 +98,34 @@ public class Program
 
             _logger.LogInformation("Starting unpack process.");
             pack.ExtractAll(verbs.OutputPath);
+            _logger.LogInformation("Done.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to unpack.");
+            Environment.Exit(13);
+        }
+    }
+
+    private static void Dump(DumpVerbs verbs)
+    {
+        if (!File.Exists(verbs.InputFile))
+        {
+            _logger.LogError("File '{path}' does not exist", verbs.InputFile);
+            Environment.Exit(2);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(verbs.OutputFile))
+        {
+            string inputFileName = Path.GetFileNameWithoutExtension(verbs.InputFile);
+            verbs.OutputFile = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(verbs.InputFile)), $"{inputFileName}.dump");
+        }
+
+        try
+        {
+            _logger.LogInformation("Dumping pack file '{input}' to '{output}'", verbs.InputFile, verbs.OutputFile);
+            PackFile.Dump(verbs.InputFile, verbs.OutputFile);
             _logger.LogInformation("Done.");
         }
         catch (Exception ex)
@@ -321,4 +350,14 @@ public class PatchVerbs
 
     [Option('b', "backup", HelpText = "Optional. Backup directory.")]
     public string BackupPath { get; set; }
+}
+
+[Verb("dump", HelpText = "Un-XOR's a .kspkg file and dumps the result to another .kspkg file.")]
+public class DumpVerbs
+{
+    [Option('i', "input", Required = true, HelpText = "Input .kspkg file")]
+    public string InputFile { get; set; }
+
+    [Option('o', "output", HelpText = "Output .kspkg file. Optional, defaults to a folder named the same as the .kspkg file.")]
+    public string OutputFile { get; set; }
 }
