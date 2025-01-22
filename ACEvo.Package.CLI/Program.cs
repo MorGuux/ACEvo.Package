@@ -221,7 +221,7 @@ public class Program
                 pack.AddFile(relativePath, file);
             }
 
-            pack.Finalize();
+            pack.Finalize(false);
             _logger.LogInformation("Done. Pack file created at '{path}'", verbs.OutputFile);
         }
         catch (Exception ex)
@@ -274,7 +274,7 @@ public class Program
                     pack.AddFile(relativePath, file, verbs.BackupPath);
                 }
 
-                pack.Finalize();
+                pack.Finalize(true);
                 _logger.LogInformation("Done. Pack file modified at '{path}'", verbs.OutputFile);
 
                 //Success

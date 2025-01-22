@@ -2,7 +2,7 @@
   "profiles": {
     "ACEvo.Package.CLI": {
       "commandName": "Project",
-      "commandLineArgs": "patch -i \"C:\\Users\\morga\\Downloads\\ace\" -o \"F:\\SteamLibrary\\steamapps\\common\\Assetto Corsa EVO\\content.kspkg\" -b \"C:\\Users\\morga\\Downloads\\ace_backup\""
+      "commandLineArgs": "patch -i \"C:\\Users\\morga\\Downloads\\ace\\patch\" -o \"F:\\SteamLibrary\\steamapps\\common\\Assetto Corsa EVO\\content.kspkg\""
     }
   }
 }

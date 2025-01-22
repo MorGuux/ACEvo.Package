@@ -19,7 +19,6 @@ namespace ACEvo.Package;
 
 public class PackFile : IDisposable
 {
-    private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
 
     private const ulong KEY = 0x9F9721A97D1135C1uL;
@@ -38,10 +37,8 @@ public class PackFile : IDisposable
         ArgumentNullException.ThrowIfNull(stream, nameof(stream));
 
         _packStream = stream;
-        _loggerFactory = loggerFactory;
 
-        if (_loggerFactory is not null)
-            _logger = _loggerFactory.CreateLogger(GetType().ToString());
+        _logger = loggerFactory.CreateLogger(GetType().ToString());
     }
 
     public static PackFile Open(string file, ILoggerFactory loggerFactory = null)
@@ -70,6 +67,8 @@ public class PackFile : IDisposable
                 packFile._fileTableKeys.Add(entry.PathHash, entry);
             }
         }
+
+        fs.Position = fs.Length - FILE_TABLE_SIZE;
 
         return packFile;
     }
@@ -217,8 +216,12 @@ public class PackFile : IDisposable
         if (!fileInfo.Exists)
             throw new FileNotFoundException("Input file not found", inputFile);
 
+        PackFileEntry entry;
+        var referencePosition = _packStream.Position;
+        bool fileWrittenInPlace = false;
+
         //Check if file already exists in the pack, if so, overwrite it
-        if (_fileTable.ContainsKey(gamePath))
+        if (_fileTable.TryGetValue(gamePath, out PackFileEntry value))
         {
             if (!string.IsNullOrEmpty(backupPath))
             {
@@ -231,20 +234,43 @@ public class PackFile : IDisposable
                 _logger?.LogInformation("File '{path}' already exists, overwriting", gamePath);
             }
 
-            var oldFileAddress = _fileTable[gamePath].FileOffset;
+            var oldFileAddress = value.FileOffset;
+            var oldFileSize = value.FileSize;
 
-            _fileTable.Remove(gamePath);
-            _fileTableKeys.Remove(HashPath(gamePath));
+            //If the new file is smaller than the old one, insert the new file in the same place, otherwise append it
+            if (fileInfo.Length <= oldFileSize)
+            {
+                fileWrittenInPlace = true;
+                //Nullify the old file data in the pack
+                _packStream.Position = oldFileAddress;
+                _packStream.Write(new byte[oldFileSize]);
+
+                //Revert the position to the old file address, ready for the new file to use it's space
+                _packStream.Position = oldFileAddress;
+
+                _logger?.LogInformation("Using original memory location for '{path}' (0x{oldFileLocation:X})", gamePath, oldFileAddress);
+            }
+            else
+            {
+                _packStream.Position = _packStream.Length;
+            }
+
+            //Update the file table entry with the new file length, and unencrypted flag
+            value.FileSize = fileInfo.Length;
+
+            entry = value;
         }
-
-        var entry = new PackFileEntry
+        else
         {
-            FileOffset = _packStream.Position,
-            FileSize = fileInfo.Length,
-            PathHash = HashPath(gamePath),
-            Flags = 0,
-            FileNameLength = (byte)Math.Min(gamePath.Length, 0xF0)
-        };
+            entry = new PackFileEntry
+            {
+                FileOffset = _packStream.Position,
+                FileSize = fileInfo.Length,
+                PathHash = HashPath(gamePath),
+                Flags = 0,
+                FileNameLength = (byte)Math.Min(gamePath.Length, 0xF0)
+            };
+        }
 
         unsafe
         {
@@ -253,10 +279,19 @@ public class PackFile : IDisposable
         }
 
         byte[] fileData = File.ReadAllBytes(inputFile);
+
+        //If the entry is to be encrypted, XOR the file data
+        if (entry.Flags.HasFlag(FileFlags.Encrypted))
+            Xor(fileData, KEY);
+
         _packStream.Write(fileData);
 
         _fileTable[gamePath] = entry;
         _fileTableKeys[entry.PathHash] = entry;
+
+        //If the file was overwritten into the previous file's memory space, revert the file stream position to the reference position
+        if (fileWrittenInPlace)
+            _packStream.Position = referencePosition;
 
         _logger?.LogInformation("Added file '{path}' (0x{size:X} bytes)", gamePath, fileData.Length);
     }
@@ -293,7 +328,7 @@ public class PackFile : IDisposable
         _logger?.LogInformation("Added directory '{path}'", gamePath);
     }
 
-    public void Finalize()
+    public void Finalize(bool overwriteFileTable)
     {
         // Write file table
         byte[] fileTableBytes = new byte[FILE_TABLE_SIZE];
@@ -310,6 +345,24 @@ public class PackFile : IDisposable
         }
 
         Xor(fileTableBytes, KEY);
+
+        var fileTablePosition = _packStream.Length - FILE_TABLE_SIZE;
+
+        //If packStream position greater than pack length - file table size, then file table is probably corrupted, so just write over it
+        if (overwriteFileTable)
+        {
+            if (_packStream.Position <= fileTablePosition)
+            {
+                //File table hasn't been written into, so just overwrite it (instead of appending it to the end of the file)
+                _packStream.Position = fileTablePosition;
+            }
+        }
+        else
+        {
+            //Write file table at the end of the pack
+            _packStream.Position = _packStream.Length;
+        }
+
         _packStream.Write(fileTableBytes);
         _packStream.Flush();
     }
